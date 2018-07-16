@@ -1,38 +1,47 @@
 import xml.etree.ElementTree as ET
 import json
 
-"""
-Namespaces del SAT
-ns = {}
-ns['sat'] = 'http://www.sat.gob.mx/cfd/3'
-ns['cfdi'] = 'cfdi'
-ns['complemento'] = 'http://www.sat.gob.mx/TimbreFiscalDigital'
-ns['tfd'] = 'tfd'
-"""
 
-class CfdiToDict(object):
-	""" Clase para parsear un XML de CFDI y convertirlo
-		en un diccionario con atributos y nodos
+class XMLToDict(object):
+	""" Clase para parsear un XML y convertirlo
+		en un diccionario con atributos y nodos.
+		Con el modulo json se puede convertir facilmente del diccionario
+		a json
 	"""
 	root = {}
 	ns = None
 	childrens = None
+	force_array = None
+	exclude_attributes = None
 	
-	def __init__(self, path_to_file="", xml_string = "", namespace=None):
-		if path_to_file != '' and xml_string != '':
+	def __init__(self, path_to_file="", xml_string = "", force_array = None, exclude_attributes = None):
+		"""
+		Si usan el parametro 'force_array', en los nodos que tengan 'childrens', 
+		se forzara que dicho nodo sea tipo array.
+		El atributo final de la clase es un tipo list, si el parametro que se pasa
+		no es list, es convertido a este al momento de la asignacion.
+		"""
+		#if path_to_file != '' and xml_string != '':
+		if not bool(path_to_file) ^ bool(xml_string):
 			raise Exception("Solo puede indicar un medio para cargar el XML a parsear")
 		if path_to_file:
 			tree = ET.parse(path_to_file)
 			self.xml = tree.getroot()
 		else:
 			self.xml = ET.fromstring(xml_string)
-		if namespace is not None:
-			self.ns = namespace
+		if force_array:
+			self.force_array = force_array
+			if not isinstance(force_array, list):
+				self.force_array = [force_array]
+		if exclude_attributes:
+			self.exclude_attributes = exclude_attributes
+			if not isinstance(exclude_attributes, list):
+				self.exclude_attributes = [exclude_attributes]
 		self.convert()
 	
 	def convert(self):
 		name_element = self.__clean_namespace(self.xml.tag)
-		self.root[name_element] = {'attrs' : self.xml.attrib}
+		self.root[name_element] = self.__clean_attributes(self.xml.attrib)
 		for element in self.xml.getchildren():
 			name, data = self.__parse_element(element)
 			self.root[name] = data
@@ -45,17 +54,17 @@ class CfdiToDict(object):
 			attrs = element.attrib
 		except AttributeError:
 			attrs = None
-		element_dict['attrs'] = attrs
+		element_dict = self.__clean_attributes(attrs)
 		if len(element.getchildren()) > 0:
 			repeated_element = self.__check_repeated_childrens(element)
-			if repeated_element:
+			if repeated_element or name_element in self.force_array:
 				element_list = []
 				for e in element.getchildren():
 					subelement_dict = {}
 					name, dicc = self.__parse_element(e)
 					subelement_dict[name] = dicc
 					element_list.append(subelement_dict)
-				element_dict[name_element] = element_list
+				element_dict = element_list
 			else:
 				for e in element.getchildren():
 					name, dicc = self.__parse_element(e)
@@ -72,16 +81,15 @@ class CfdiToDict(object):
 		pos = tag.find("}") + 1
 		nuevo_tag = tag[pos:]
 		return nuevo_tag
-
+	
+	def __clean_attributes(self, attributes):
+		if self.exclude_attributes:
+			for attr in self.exclude_attributes:
+				if attr in attributes:
+					del attributes[attr]
+		return attributes
 
 
 if __name__ == '__main__':
-
-	"""
-	Mejora: Hacer todo dinamico, recorrer por completo el XML con lo que brinde el tree.getroot() (Getchildren, obtener atributos, etc)
-			Para que no tenga nada amarrado y poder aplicarlo con cualquier libreria.
-			Limpiar las llaves con los ns declarados y con find y replace en un loop
-			Revisar si se puede obtener el elemento sin tener que limpiar el ns. Ej. emisor = comprobante.find('http://www.sat...:Emisor', ns), esto porque ya se tiene el namespace completo el ns
-	"""
-	prueba = CfdiToDict(path_to_file='factura.xml')
+	prueba = XMLToDict(path_to_file='cfdi.xml', force_array = ['Conceptos'], exclude_attributes = ['{http://www.w3.org/2001/XMLSchema-instance}schemaLocation'])
 	print(json.dumps(prueba.root, indent=4))
